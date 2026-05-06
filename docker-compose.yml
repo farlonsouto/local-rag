@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: llm-engine
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    entrypoint: /bin/sh
+    command: -c "ollama serve & sleep 5 && ollama pull llama3.2 && ollama pull nomic-embed-text && wait"
+    healthcheck:
+      test: [ "CMD-SHELL", "ollama list | grep -q 'llama3.2'" ]
+      interval: 20s
+      timeout: 10s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  filewalker: # Renamed from ingestor to match your naming convention
+    build: .
+    container_name: filewalker-engine
+    volumes:
+      - ./data:/app/data:ro
+      - ./chroma_db:/app/chroma_db
+    # We run this as a streamlit app too for the progress bar UI
+    command: [ "streamlit", "run", "filewalker/main.py", "--server.port=8502" ]
+    ports:
+      - "8502:8502"
+    depends_on:
+      ollama: { condition: service_healthy }
+
+  query-app:
+    build: .
+    container_name: query-app-interface
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./chroma_db:/app/chroma_db:ro
+    depends_on:
+      ollama: { condition: service_healthy }
+
+volumes:
+  ollama_data:
