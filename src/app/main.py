@@ -2,6 +2,8 @@ import os
 
 import streamlit as st
 
+st.set_page_config(page_title="Family Intelligence Vault", page_icon="🧠")
+
 from core import RAGQueryService
 
 # Environment Config
@@ -9,7 +11,6 @@ DB_DIR = os.getenv("DB_DIR", "/app/chroma_db")
 OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 LLM_MODEL = "llama3.2"
 
-st.set_page_config(page_title="Family Intelligence Vault", icon="🧠")
 st.title("🧠 Secure Knowledge Query")
 
 

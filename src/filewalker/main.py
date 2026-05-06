@@ -2,7 +2,7 @@ import streamlit as st
 
 from filewalker.core import DocumentIndexer
 
-st.set_page_config(page_title="Filewalker | Indexer", icon="📂")
+st.set_page_config(page_title="Filewalker | Indexer", page_icon="📂")
 
 st.title("📂 Filewalker: Vector DB Builder")
 st.markdown("""
