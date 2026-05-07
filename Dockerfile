@@ -16,12 +16,11 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python requirements
-# We include 'unstructured', 'docx2txt', and 'markdown' for Module 1
 RUN pip install --no-cache-dir \
-    langchain \
-    langchain-ollama \
-    langchain-community \
+    langchain==0.3.25 \
+    langchain-community==0.3.24 \
+    langchain-ollama==0.3.2 \
+    langchain-chroma==0.2.4 \
     chromadb \
     pypdf \
     streamlit \
