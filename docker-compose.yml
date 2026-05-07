@@ -1,52 +1,318 @@
-version: '3.8'
+# Compose Specification version.
+#
+# Historically, docker-compose used explicit schema versions
+# (e.g. 2.x, 3.x, 3.8).
+#
+# Modern Docker Compose v2 ignores this field and follows the
+# Compose Specification automatically, but keeping it improves
+# readability and compatibility with older tooling.
+#
+# Alternatives:
+#   version: "3"
+#   version: "3.9"
+#
+# In practice:
+#   - 3.x was designed originally for Docker Swarm compatibility
+#   - newer Compose plugins no longer require it
+version: "3.8"
 
 services:
+
+  # ============================================================
+  # LLM INFERENCE ENGINE
+  # ============================================================
+  #
+  # This service hosts Ollama, which exposes a local REST API
+  # for:
+  #   - text generation
+  #   - embeddings
+  #   - model management
+  #
+  # It is intentionally isolated as an infrastructure dependency,
+  # similar to how a real system would isolate Redis/Postgres/etc.
   ollama:
+
+    # Pulls image from Docker Hub.
+    #
+    # Syntax:
+    #   image: repository:tag
+    #
+    # Alternatives:
+    #   image: ollama/ollama:latest
+    #   image: ollama/ollama:0.5.7
+    #
+    # Using latest is acceptable for local experiments but less
+    # deterministic in production.
     image: ollama/ollama:latest
+
+    # Explicit container name.
+    #
+    # Without this:
+    #   Docker auto-generates names like:
+    #   local-rag-ollama-1
+    #
+    # Good for:
+    #   docker logs llm-engine
+    #   docker exec -it llm-engine bash
+    #
+    # Drawback:
+    #   harder scaling (cannot run multiple replicas with same name)
     container_name: llm-engine
+
+    # Host-to-container port mapping.
+    #
+    # Syntax:
+    #   HOST_PORT:CONTAINER_PORT
+    #
+    # Here:
+    #   localhost:11434 -> container:11434
+    #
+    # So external clients can access:
+    #   http://localhost:11434
+    #
+    # Alternatives:
+    #   "8080:11434"
+    #   "127.0.0.1:11434:11434"
     ports:
       - "11434:11434"
+
+    # Persistent volumes.
+    #
+    # Named volume:
+    #   ollama_data
+    #
+    # Stored in Docker-managed area:
+    #   /var/lib/docker/volumes/
+    #
+    # This persists downloaded models across:
+    #   - container restarts
+    #   - docker compose down
+    #
+    # Removed only with:
+    #   docker compose down -v
     volumes:
       - ollama_data:/root/.ollama
+
+    # GPU reservation.
+    #
+    # Enables NVIDIA runtime integration.
+    #
+    # Important:
+    #   This section originally targeted Swarm, but modern
+    #   Docker Compose also honors GPU reservations.
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
+
+              # Number of GPUs to allocate.
+              #
+              # Alternatives:
+              #   count: 1
+              #   count: 2
+              #   count: all
               count: all
+
+              # Requested device capabilities.
+              #
+              # gpu is required for CUDA workloads.
               capabilities: [ gpu ]
+
+    # Override container entrypoint.
+    #
+    # Default Ollama image starts Ollama directly.
+    #
+    # Here we replace it with a shell to run multiple commands.
     entrypoint: /bin/sh
-    command: -c "ollama serve & sleep 5 && ollama pull llama3.2 && ollama pull nomic-embed-text && wait"
+
+    # Startup command.
+    #
+    # Sequence:
+    #   1. start ollama server
+    #   2. wait for initialization
+    #   3. pre-pull required models
+    #   4. wait forever on background process
+    #
+    # '&' backgrounds process.
+    # 'wait' prevents shell exit.
+    command: >
+      -c "
+      ollama serve &
+      sleep 5 &&
+      ollama pull llama3.2 &&
+      ollama pull nomic-embed-text &&
+      wait
+      "
+
+    # Healthcheck.
+    #
+    # Docker periodically runs command and marks service:
+    #   healthy / unhealthy
+    #
+    # Used by depends_on conditions.
     healthcheck:
+
+      # Health command.
+      #
+      # CMD-SHELL executes in shell context.
+      #
+      # Alternative:
+      #   ["CMD", "curl", "-f", "..."]
       test: [ "CMD-SHELL", "ollama list | grep -q 'llama3.2'" ]
+
+      # Interval between checks
       interval: 20s
+
+      # Max duration per check
       timeout: 10s
+
+      # Number of failures before unhealthy
       retries: 30
+
+      # Grace period before checks begin
       start_period: 10s
+
+    # Restart policy.
+    #
+    # unless-stopped:
+    #   restart automatically unless user manually stops.
+    #
+    # Alternatives:
+    #   no
+    #   always
+    #   on-failure
     restart: unless-stopped
 
-  filewalker: # Renamed from ingestor to match your naming convention
+  # ============================================================
+  # INDEXER SERVICE
+  # ============================================================
+  #
+  # Crawls filesystem, parses files, generates embeddings,
+  # writes vectors into Chroma.
+  filewalker:
+
+    # Build image from local Dockerfile.
+    #
+    # Equivalent:
+    #   docker build .
     build: .
+
     container_name: filewalker-engine
+
     volumes:
-      - ./data:/app/data:ro
+
+      # Host directory bind mount.
+      #
+      # Syntax:
+      #   HOST_PATH:CONTAINER_PATH:MODE
+      #
+      # ro = read-only
+      #
+      # Protects host filesystem from accidental writes.
+      - /home/fsouto:/app/data:ro
+
+      # Persist vector database locally.
+      #
+      # Host folder:
+      #   ./chroma_db
+      #
+      # Container path:
+      #   /app/chroma_db
+      #
+      # Survives container rebuilds.
       - ./chroma_db:/app/chroma_db
-    # We run this as a streamlit app too for the progress bar UI
-    command: [ "streamlit", "run", "filewalker/main.py", "--server.port=8502" ]
+
+    environment:
+
+      # Available inside container as env vars.
+      #
+      # Equivalent Python:
+      #   os.getenv(...)
+      - DOCUMENT_SOURCE_PATH=/app/data
+      - VECTOR_DB_PATH=/app/chroma_db
+      - OLLAMA_BASE_URL=http://ollama:11434
+
+    # Override default CMD.
+    #
+    # JSON-array syntax avoids shell interpolation issues.
+    command:
+      [
+        "streamlit",
+        "run",
+        "filewalker/main.py",
+        "--server.port=8502",
+        "--server.address=0.0.0.0"
+      ]
+
     ports:
       - "8502:8502"
-    depends_on:
-      ollama: { condition: service_healthy }
 
+    depends_on:
+
+      # Wait until Ollama becomes healthy.
+      #
+      # Without condition:
+      #   only ensures startup ordering
+      #
+      # With service_healthy:
+      #   waits for healthcheck success
+      ollama:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  # ============================================================
+  # QUERY UI
+  # ============================================================
+  #
+  # User-facing chat interface.
+  #
+  # Reads persisted vectors and queries LLM.
   query-app:
+
     build: .
+
     container_name: query-app-interface
+
     ports:
       - "8501:8501"
-    volumes:
-      - ./chroma_db:/app/chroma_db:ro
-    depends_on:
-      ollama: { condition: service_healthy }
 
+    volumes:
+
+      # IMPORTANT:
+      # no ':ro'
+      #
+      # Although querying seems read-only, SQLite/Chroma may need:
+      #   - lock files
+      #   - journals
+      #   - metadata updates
+      #
+      # Read-only mounts often break Chroma.
+      - ./chroma_db:/app/chroma_db
+
+    environment:
+      - DB_DIR=/app/chroma_db
+      - OLLAMA_BASE_URL=http://ollama:11434
+
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+
+# ==============================================================
+# NAMED VOLUMES
+# ==============================================================
+#
+# Docker-managed persistent storage.
+#
+# Lifecycle:
+#   survives:
+#     docker compose down
+#
+#   removed by:
+#     docker compose down -v
 volumes:
   ollama_data:
