@@ -1,16 +1,33 @@
 name: local-rag
+
 channels:
   - conda-forge
   - defaults
+
 dependencies:
   - python=3.11
   - pip
-  - pip:
-      - langchain==0.3.*       # Core framework
-      - langchain-community    # Community integrations (Chroma, etc.)
-      - langchain-ollama       # Ollama integration
-      - chromadb               # Local vector storage
-      - pypdf                  # PDF parsing
-      - streamlit              # Desktop-style UI
-      - python-dotenv          # Manage local vars
 
+  - pip:
+      # Core LangChain ecosystem (compatible set)
+      - langchain==0.3.25
+      - langchain-community==0.3.24
+      - langchain-ollama==0.3.2
+      - langchain-chroma==0.2.4
+
+      # Vector database
+      - chromadb==1.0.8
+
+      # Document parsing
+      - pypdf==5.4.0
+      - docx2txt==0.8
+      - unstructured[md,html]
+
+      # UI
+      - streamlit==1.45.0
+
+      # Config / env
+      - python-dotenv==1.1.0
+
+      # MIME type detection
+      - python-magic==0.4.27
