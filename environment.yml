@@ -9,16 +9,16 @@ dependencies:
   - pip
 
   - pip:
-      # Core LangChain ecosystem (compatible set)
+      # LangChain ecosystem
       - langchain==0.3.25
       - langchain-community==0.3.24
       - langchain-ollama==0.3.2
       - langchain-chroma==0.2.4
 
-      # Vector database
-      - chromadb==1.0.8
+      # Vector DB (must satisfy langchain-chroma)
+      - chromadb>=1.0.9
 
-      # Document parsing
+      # Parsing
       - pypdf==5.4.0
       - docx2txt==0.8
       - unstructured[md,html]
@@ -26,8 +26,6 @@ dependencies:
       # UI
       - streamlit==1.45.0
 
-      # Config / env
+      # Utilities
       - python-dotenv==1.1.0
-
-      # MIME type detection
       - python-magic==0.4.27
