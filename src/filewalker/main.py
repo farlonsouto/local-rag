@@ -6,7 +6,7 @@ st.set_page_config(page_title="Filewalker | Indexer", page_icon="📂")
 
 st.title("📂 Filewalker: Vector DB Builder")
 st.markdown("""
-This module performs **Semantic Indexing**. It reads your local PDFs, converts them 
+This module performs **Semantic Indexing**. It reads your local documents, converts them 
 into mathematical vectors, and stores them in the persistent storage.
 """)
 
